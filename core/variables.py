@@ -8,9 +8,13 @@ er Permissions"
 PENDING = "pending"
 PHONE_VERIFIED = "phone_verified"
 DELETED = "deleted"
+MESSAGE = "message"
+DATA = "data"
 
 USER_STATE = (
     (variables.PENDING, _("Pending")),
     (variables.PHONE_VERIFIED, _("Phone number Verified")),
     (variables.DELETED, _("Deleted")),
 )
+
+USER_ALREADY_EXISTS = _("The User already exists.")

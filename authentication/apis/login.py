@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from authentication.choices import *
 from authentication.models import User
 from authentication.permissions import AnonymousTokenPermission
-from authentication.v1.serializers import (GetVerificationCodeSerializer,
+from authentication.v1.serializers import (SignUpSerializer,
                                            LoginSerializer)
 from authentication.v1.utils.otp import create_verification_code
 from authentication.v1.utils.otp import load_otp_adapter_lazy as OTPAdapter
@@ -24,35 +24,20 @@ from common.variables import BUSINESS_STATUS
 from common.utils import countries_hints_dict
 
 
-class VerificationCodeViewSet(
+class SignUpViewSet(
     viewsets.GenericViewSet,
 ):
     permission_classes = [AnonymousTokenPermission]
     queryset = User.objects.all()
-    serializer_class = GetVerificationCodeSerializer
+    serializer_class = SignUpSerializer
 
     @action(detail=False, methods=[variables.POST])
-    def get(self, request):
-        """
-        Retrieves or generates a verification code for a given phone number.
-
-        This endpoint is used to retrieve or generate a verification code for a provided phone number. 
-        If the phone number is associated with an existing user, a verification code is sent. 
-        If the phone number is not associated with any existing user, a new user is created and a verification code is sent.
-
-        Parameters
-        -------
-        request `Request`: The HTTP request object containing the phone_number in the data field.
-
-        Returns
-        -------
-        Response: A response indicating the success or failure of the operation.
-        """
+    def sign_up(self, request):
 
         # Check input data
         required_fields = [variables.PHONE_NUMBER, variables.COUNTRY_CODE]
         if not check_api_input_data(request, required_fields):
-            return Response(status=status.HTTP_400_BAD_REQUEST, exception=True, data=INVALID_INPUT_DATA)
+            return Response(status=status.HTTP_400_BAD_REQUEST, exception=True, data={variables.DATA: None, variables.MESSAGE: INVALID_INPUT_DATA},)
 
         # Validate Input data
         phone_number = request.data.get(variables.PHONE_NUMBER)
@@ -61,11 +46,9 @@ class VerificationCodeViewSet(
             return Response(status=status.HTTP_400_BAD_REQUEST, exception=True, data=INVALID_INPUT_DATA)
         if not PhoneNumberValidatorAdapter(phone_number, country_code).validate():
             return BaseResponse(
-                http_status_code=status.HTTP_400_BAD_REQUEST,
+                data={variables.Data: serializer.errors, variables.MESSAGE: f"{INVALID_PHONE_NUMBER}. The supported formet for selected country is: {countries_hints_dict[country_code]}"},
                 is_exception=True,
-                message=f"{INVALID_PHONE_NUMBER}. The supported formet for selected country is: {countries_hints_dict[country_code]}",
-                data=None,
-                business_status_code=BUSINESS_STATUS.INVALID_INPUT_DATA,
+                status=status.HTTP_400_BAD_REQUEST,
             )
         normalized_phone_number = normilize_phone_number(
             phone_number, country_code=country_code)
@@ -77,71 +60,25 @@ class VerificationCodeViewSet(
         # Send data to serializer
         serializer = self.get_serializer_class()(data=validated_data)
         if not serializer.is_valid():
-            return BaseResponse(
-                message=INVALID_INPUT_DATA,
-                data={variables.DETAILS: serializer.errors},
+            return Response(
+                data={variables.Data: serializer.errors, variables.MESSAGE: INVALID_INPUT_DATA},
                 is_exception=True,
-                http_status_code=status.HTTP_400_BAD_REQUEST,
-                business_status_code=BUSINESS_STATUS.INVALID_INPUT_DATA,
+                status=status.HTTP_400_BAD_REQUEST,
             )
-
-        # Send Verification code
+            
+        # Sign up user
         user = serializer.user_exists(
             phone_number=normalized_phone_number)  # returns user or none
         if user:
-            if user.is_bocked:
-                return BaseResponse(
-                    message=BLOCKED_USER,
-                    data=None,
-                    is_exception=True,
-                    http_status_code=status.HTTP_200_OK,
-                    business_status_code=BUSINESS_STATUS.USER_IS_BLOCKED,
-                )
-            try:
-                if not serializer.have_access_to_request_otp(user):
-                    return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
-            except redis.ConnectionError:
-                # TODO add this to a log server
-                return BaseResponse(
-                    data=None,
-                    message=variables.TRY_AGAIN_LATER,
-                    is_exception=True,
-                    business_status_code=BUSINESS_STATUS.REDIS_IS_DOWN,
-                    http_status_code=status.HTTP_200_OK
-                )
-            verification_code, exp = create_verification_code(request.user)
-            send_otp(phone_number=normalized_phone_number,
-                     verification_code=verification_code)
-            try:
-                serializer.add_otp_to_redis(user, verification_code, exp)
-            except redis.ConnectionError:
-                return BaseResponse(
-                    data=None,
-                    message=variables.TRY_AGAIN_LATER,
-                    is_exception=True,
-                    business_status_code=BUSINESS_STATUS.REDIS_IS_DOWN,
-                    http_status_code=status.HTTP_200_OK
-                )
-
             return BaseResponse(
-                message=VERIFICATION_CODE_SENDED,
-                data=None,
-                is_exception=False,
-                http_status_code=status.HTTP_200_OK,
-                business_status_code=BUSINESS_STATUS.SUCCESS,
+                data={variables.DATA: None, variables.MESSAGE: USER_ALREADY_EXISTS},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         else:
-            # sign_up_event_adapter(created=True, phone_number=normalized_phone_number)
             user = serializer.create_user(phone_number=normalized_phone_number)
-            verification_code, exp = create_verification_code(request.user)
-            send_otp(phone_number=normalized_phone_number,
-                     verification_code=verification_code)
             return BaseResponse(
-                message=USER_REGISTERD,
-                data=None,
-                is_exception=False,
-                http_status_code=status.HTTP_201_CREATED,
-                business_status_code=BUSINESS_STATUS.SUCCESS,
+                data={variables.DATA: None, variables.MESSAGE: USER_REGISTERD},
+                status=status.HTTP_201_CREATED,
             )
 
 
@@ -354,3 +291,15 @@ class TokenRefreshWithPermission(TokenRefreshView):
         List of permissions required for token refresh.
     """
     permission_classes = [AnonymousTokenPermission]
+
+
+
+
+            # if user.is_bocked:
+            #     return BaseResponse(
+            #         message=BLOCKED_USER,
+            #         data=None,
+            #         is_exception=True,
+            #         http_status_code=status.HTTP_200_OK,
+            #         business_status_code=BUSINESS_STATUS.USER_IS_BLOCKED,
+            #     )

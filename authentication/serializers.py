@@ -138,13 +138,8 @@ class LoginSerializer(SerializerWithVerboseNames):
         return user
 
 
-class GetVerificationCodeSerializer(SerializerWithVerboseNames):
-    """
-    Serializer for getting a verification code.
+class SignUpSerializer(SerializerWithVerboseNames):
 
-    This serializer handles the validation of phone number and country code. It also provides methods to manage users
-    and OTP (One-Time Password) in Redis.
-    """
     phone_number = serializers.CharField(max_length=18)
     country_code = serializers.CharField(max_length=7)
 
@@ -210,44 +205,6 @@ class GetVerificationCodeSerializer(SerializerWithVerboseNames):
             The new state value.
         """
         user.state = value
-
-    def add_otp_to_redis(self, user, verification_code, expirtion_time, redis_lifetime=2) -> None:
-        """
-        Add an OTP to Redis for the given user.
-
-        Parameters
-        ----------
-        user : User
-            The user object.
-        verification_code : str
-            The verification code to store.
-        expirtion_time : int
-            The expiration time of the verification code.
-        redis_lifetime : int, optional
-            The lifetime of the Redis entry in minutes (default is 2 minutes).
-        """
-        key = f'{variables.VERIFICATION_CODE}:{user.pk}'
-        RedisStore().set(key, {variables.VERIFICATION_CODE: verification_code,
-                               variables.EXPIRTION_TIME: expirtion_time, variables.PHONE_NUMBER: user.phone_number}, redis_lifetime)
-
-    def have_access_to_request_otp(self, user) -> None:
-        """
-        Check if the user has access to request an OTP.
-
-        This method checks if an OTP request is already in Redis for the given user.
-
-        Parameters
-        ----------
-        user : User
-            The user object.
-
-        Returns
-        -------
-        bool
-            False if an OTP request already exists, True otherwise.
-        """
-        key = f'{variables.VERIFICATION_CODE}:{user.pk}'
-        return False if RedisStore().get(key=key) else True
 
     def validate(self, attrs):
         """
